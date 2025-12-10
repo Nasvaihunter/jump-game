@@ -58,4 +58,7 @@ CONTRACT_ADDRESS.txt
 Thumbs.db
 .DS_Store
 
+# Local setup files
+GITHUB_SETUP.md
+
 
