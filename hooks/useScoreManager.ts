@@ -47,16 +47,16 @@ export function useScoreManager() {
   const [transactionHash, setTransactionHash] = useState<`0x${string}` | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Always get contract address (with fallback)
+  // get contract address, use fallback if it fails
   let contractAddress: `0x${string}` | undefined;
   try {
     contractAddress = getScoreManagerAddress();
   } catch (error) {
-    console.error("Failed to get contract address:", error);
+    console.error("failed to get contract address:", error);
     contractAddress = "0x589E07ff84eD654D40F80d2B352cC15EBDa223B7" as `0x${string}`;
   }
 
-  // Get player's score
+  // get player's score
   const { data: playerScoreData, isLoading: loadingPlayerScore } = useReadContract({
     address: contractAddress !== "0x0000000000000000000000000000000000000000" ? contractAddress : undefined,
     abi: SCORE_MANAGER_ABI,
@@ -67,7 +67,7 @@ export function useScoreManager() {
     },
   });
 
-  // Get top scores
+  // get top scores
   const { data: topScoresData, isLoading: loadingTopScores } = useReadContract({
     address: contractAddress !== "0x0000000000000000000000000000000000000000" ? contractAddress : undefined,
     abi: SCORE_MANAGER_ABI,
@@ -75,14 +75,14 @@ export function useScoreManager() {
     args: [BigInt(10)],
     query: {
       enabled: !!contractAddress && contractAddress !== "0x0000000000000000000000000000000000000000",
-      refetchInterval: 5000,
+      refetchInterval: 5000, // refresh every 5 seconds
     },
   });
 
-  // Write contract
+  // write to contract
   const { writeContract, data: hash, isPending, isError, error, reset } = useWriteContract();
 
-  // Wait for transaction
+  // wait for tx confirmation
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash: hash || undefined,
   });
@@ -125,7 +125,7 @@ export function useScoreManager() {
     });
   };
 
-  // Parse player score
+  // parse player score data
   const playerScore = playerScoreData
     ? {
         score: (playerScoreData as any)[0] as bigint,
@@ -134,7 +134,7 @@ export function useScoreManager() {
       }
     : null;
 
-  // Parse top scores
+  // parse top scores
   const topScores = topScoresData
     ? {
         scores: (topScoresData as any)[0] as bigint[],

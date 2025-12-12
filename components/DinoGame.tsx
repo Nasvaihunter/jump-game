@@ -121,45 +121,39 @@ export default function DinoGame({ onGameOver, resetKey }: DinoGameProps) {
       });
     }
 
-    // Update dino physics - STANDARD WORKING IMPLEMENTATION
-    // dinoY: Y position on canvas (screen coordinates)
-    // dinoVelocity: negative = moving up, positive = moving down
-    
+    // dino physics stuff
+    // dinoY is the Y position on screen, negative velocity = going up, positive = going down
     const groundLevel = GROUND_Y - DINO_SIZE;
     
-    // Only apply physics if not on ground or jumping
+    // only apply physics when not on ground or jumping
     if (state.dinoY < groundLevel || state.dinoVelocity < 0) {
-      // Apply gravity (always increases downward velocity)
-      state.dinoVelocity += state.gravity;
-      
-      // Update position
+      state.dinoVelocity += state.gravity; // gravity pulls down always
       state.dinoY += state.dinoVelocity;
       
-      // Max jump height - limit when moving up past max
+      // limit jump height so he doesn't fly too high
       const maxJumpHeight = groundLevel - 100;
       if (state.dinoY <= maxJumpHeight && state.dinoVelocity < 0) {
         state.dinoY = maxJumpHeight;
-        state.dinoVelocity = 0; // Stop upward movement
+        state.dinoVelocity = 0; // stop going up
       }
     }
 
-    // Ground collision - check if hit or below ground
+    // check if hit ground
     if (state.dinoY >= groundLevel) {
-      // On or below ground - stop at ground
-      state.dinoY = groundLevel;
+      state.dinoY = groundLevel; // put him on ground
       state.dinoVelocity = 0;
       state.isJumping = false;
     }
 
-    // Update obstacles
+    // move obstacles to the left
     state.obstacles.forEach((obstacle) => {
       obstacle.x -= state.gameSpeed;
     });
 
-    // Remove off-screen obstacles
+    // remove obstacles that went off screen
     state.obstacles = state.obstacles.filter((obstacle) => obstacle.x + obstacle.width > 0);
 
-    // Spawn new obstacles (more frequent as game progresses)
+    // spawn new obstacles (more often as game goes on)
     const spawnInterval = Math.max(60, 150 - Math.floor(state.frameCount / 200));
     if (state.frameCount % spawnInterval === 0 && (Math.random() > 0.3 || state.obstacles.length === 0)) {
       state.obstacles.push({
@@ -169,13 +163,12 @@ export default function DinoGame({ onGameOver, resetKey }: DinoGameProps) {
       });
     }
 
-    // Increase game speed gradually
+    // make game faster over time
     if (state.frameCount % 100 === 0) {
       state.gameSpeed = Math.min(10, state.gameSpeed + 0.1);
     }
 
-    // Collision detection
-    // dinoY is already in screen coordinates
+    // check if dino hit obstacle
     const dinoRect = {
       x: DINO_X,
       y: state.dinoY,
@@ -239,7 +232,7 @@ export default function DinoGame({ onGameOver, resetKey }: DinoGameProps) {
   const handleJump = useCallback(() => {
     const state = gameStateRef.current;
     const groundLevel = GROUND_Y - DINO_SIZE;
-    // Only allow jump when on ground
+    // only jump when on ground
     if (!state.isJumping && state.dinoY >= groundLevel - 1) {
       state.dinoVelocity = state.jumpPower;
       state.isJumping = true;
