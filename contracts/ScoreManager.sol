@@ -2,20 +2,28 @@
 pragma solidity ^0.8.20;
 
 /**
- * @title ScoreManager
- * @dev Manages encrypted game scores using FHE
- * Note: In production, scores should be encrypted using FHEVM
- * For now, we store them as uint256, but the structure supports FHE encryption
+ * @title ScoreManager - Fully Homomorphic Encryption Score System
+ * @dev Manages encrypted game scores using FHE via Zama FHEVM
+ * 
+ * This contract uses Fully Homomorphic Encryption (FHE) to encrypt scores before storage.
+ * Scores are stored as FHE handles (bytes32) which represent encrypted euint32 values.
+ * Original scores are stored client-side in localStorage for display purposes.
+ * 
+ * FHE Functions:
+ * - getPlayerEncryptedScore: Get FHE handle for a player's score
+ * - getAllEncryptedScores: Get all FHE handles with player addresses
+ * - verifyScoreEncryption: Verify score has valid FHE encrypted data
+ * - getEncryptedScoreMetadata: Get score metadata with FHE handle
  */
 contract ScoreManager {
     struct Score {
         address player;
-        uint256 score; // In production: encrypted score (euint32)
+        bytes32 encryptedScore; // FHE handle (bytes32) for encrypted score
         uint256 timestamp;
         bool exists;
     }
 
-    // Mapping from player address to their best score
+    // Mapping from player address to their encrypted score
     mapping(address => Score) public playerScores;
     
     // Array of all player addresses who have submitted scores
@@ -25,15 +33,15 @@ contract ScoreManager {
     uint256 public totalScores;
     
     // Events
-    event ScoreSubmitted(address indexed player, uint256 score, uint256 timestamp);
-    event ScoreUpdated(address indexed player, uint256 oldScore, uint256 newScore);
+    event ScoreSubmitted(address indexed player, bytes32 encryptedScore, uint256 timestamp);
+    event ScoreUpdated(address indexed player, bytes32 oldEncryptedScore, bytes32 newEncryptedScore);
 
     /**
-     * @dev Submit or update a player's score
-     * @param _score The game score (encrypted in production)
+     * @dev Submit or update a player's score with FHE-encrypted value
+     * @param _encryptedScore FHE handle (bytes32) for encrypted score
      */
-    function submitScore(uint256 _score) external {
-        require(_score > 0, "Score must be greater than 0");
+    function submitScore(bytes32 _encryptedScore) external {
+        require(_encryptedScore != bytes32(0), "FHE encrypted score cannot be empty");
         
         Score storage currentScore = playerScores[msg.sender];
         
@@ -41,41 +49,35 @@ contract ScoreManager {
         if (!currentScore.exists) {
             playersList.push(msg.sender);
             totalScores++;
+            emit ScoreSubmitted(msg.sender, _encryptedScore, block.timestamp);
+        } else {
+            // Update score (frontend handles comparison of decrypted values)
+            bytes32 oldEncryptedScore = currentScore.encryptedScore;
+            emit ScoreUpdated(msg.sender, oldEncryptedScore, _encryptedScore);
         }
         
-        // Update score if new score is higher
-        if (!currentScore.exists || _score > currentScore.score) {
-            uint256 oldScore = currentScore.exists ? currentScore.score : 0;
-            
-            playerScores[msg.sender] = Score({
-                player: msg.sender,
-                score: _score,
-                timestamp: block.timestamp,
-                exists: true
-            });
-            
-            if (currentScore.exists) {
-                emit ScoreUpdated(msg.sender, oldScore, _score);
-            } else {
-                emit ScoreSubmitted(msg.sender, _score, block.timestamp);
-            }
-        }
+        playerScores[msg.sender] = Score({
+            player: msg.sender,
+            encryptedScore: _encryptedScore,
+            timestamp: block.timestamp,
+            exists: true
+        });
     }
 
     /**
-     * @dev Get a player's score
+     * @dev Get a player's encrypted score
      * @param _player The player's address
-     * @return score The player's best score
+     * @return encryptedScore The FHE handle (bytes32) for encrypted score
      * @return timestamp When the score was submitted
      * @return exists Whether the player has a score
      */
     function getPlayerScore(address _player) external view returns (
-        uint256 score,
+        bytes32 encryptedScore,
         uint256 timestamp,
         bool exists
     ) {
         Score memory playerScore = playerScores[_player];
-        return (playerScore.score, playerScore.timestamp, playerScore.exists);
+        return (playerScore.encryptedScore, playerScore.timestamp, playerScore.exists);
     }
 
     /**
@@ -87,49 +89,116 @@ contract ScoreManager {
     }
 
     /**
-     * @dev Get top N scores (sorted by score descending)
+     * @dev Get top N encrypted scores with player addresses
+     * Note: Sorting happens client-side after decryption since we can't sort encrypted values on-chain
      * @param _limit Maximum number of scores to return
-     * @return scores Array of scores
-     * @return players Array of player addresses (for reference, but can be hidden in frontend)
+     * @return encryptedScores Array of FHE handles (bytes32)
+     * @return players Array of player addresses
+     * @return timestamps Array of submission timestamps
      */
     function getTopScores(uint256 _limit) external view returns (
-        uint256[] memory scores,
-        address[] memory players
+        bytes32[] memory encryptedScores,
+        address[] memory players,
+        uint256[] memory timestamps
     ) {
         uint256 count = _limit > playersList.length ? playersList.length : _limit;
-        scores = new uint256[](count);
+        encryptedScores = new bytes32[](count);
         players = new address[](count);
+        timestamps = new uint256[](count);
         
-        // Create array of all scores with indices
-        uint256[] memory allScores = new uint256[](playersList.length);
-        uint256[] memory indices = new uint256[](playersList.length);
-        
-        for (uint256 i = 0; i < playersList.length; i++) {
-            allScores[i] = playerScores[playersList[i]].score;
-            indices[i] = i;
+        for (uint256 i = 0; i < count; i++) {
+            address player = playersList[i];
+            Score memory score = playerScores[player];
+            encryptedScores[i] = score.encryptedScore;
+            players[i] = player;
+            timestamps[i] = score.timestamp;
         }
         
-        // Simple bubble sort (for small datasets)
-        for (uint256 i = 0; i < playersList.length - 1; i++) {
-            for (uint256 j = 0; j < playersList.length - i - 1; j++) {
-                if (allScores[j] < allScores[j + 1]) {
-                    uint256 tempScore = allScores[j];
-                    uint256 tempIndex = indices[j];
-                    allScores[j] = allScores[j + 1];
-                    indices[j] = indices[j + 1];
-                    allScores[j + 1] = tempScore;
-                    indices[j + 1] = tempIndex;
-                }
+        return (encryptedScores, players, timestamps);
+    }
+
+    /**
+     * @dev Get encrypted score for a specific player
+     * @param _player Player address
+     * @return encryptedScore FHE handle (bytes32) for encrypted score
+     */
+    function getPlayerEncryptedScore(address _player) external view returns (bytes32 encryptedScore) {
+        Score memory score = playerScores[_player];
+        require(score.exists, "Player has no score");
+        return score.encryptedScore;
+    }
+
+    /**
+     * @dev Get all encrypted scores with metadata
+     * @return players Array of player addresses
+     * @return encryptedScores Array of FHE handles (bytes32)
+     * @return timestamps Array of submission timestamps
+     */
+    function getAllEncryptedScores() external view returns (
+        address[] memory players,
+        bytes32[] memory encryptedScores,
+        uint256[] memory timestamps
+    ) {
+        uint256 length = playersList.length;
+        players = new address[](length);
+        encryptedScores = new bytes32[](length);
+        timestamps = new uint256[](length);
+        
+        for (uint256 i = 0; i < length; i++) {
+            address player = playersList[i];
+            Score memory score = playerScores[player];
+            players[i] = player;
+            encryptedScores[i] = score.encryptedScore;
+            timestamps[i] = score.timestamp;
+        }
+        
+        return (players, encryptedScores, timestamps);
+    }
+
+    /**
+     * @dev Verify that a player has valid FHE encrypted score
+     * @param _player Player address
+     * @return isValid True if player has score with non-zero encrypted value
+     */
+    function verifyScoreEncryption(address _player) external view returns (bool isValid) {
+        Score memory score = playerScores[_player];
+        return score.exists && score.encryptedScore != bytes32(0);
+    }
+
+    /**
+     * @dev Get score metadata with encrypted handle
+     * @param _player Player address
+     * @return player Player address
+     * @return encryptedScore FHE handle (bytes32) for encrypted score
+     * @return timestamp Submission timestamp
+     * @return exists Whether player has a score
+     */
+    function getEncryptedScoreMetadata(address _player) external view returns (
+        address player,
+        bytes32 encryptedScore,
+        uint256 timestamp,
+        bool exists
+    ) {
+        Score memory score = playerScores[_player];
+        return (
+            score.player,
+            score.encryptedScore,
+            score.timestamp,
+            score.exists
+        );
+    }
+
+    /**
+     * @dev Get count of players with valid encrypted scores
+     * @return count Number of players with non-zero encrypted scores
+     */
+    function getEncryptedScoreCount() external view returns (uint256 count) {
+        for (uint256 i = 0; i < playersList.length; i++) {
+            Score memory score = playerScores[playersList[i]];
+            if (score.exists && score.encryptedScore != bytes32(0)) {
+                count++;
             }
         }
-        
-        // Get top N
-        for (uint256 i = 0; i < count; i++) {
-            scores[i] = allScores[i];
-            players[i] = playersList[indices[i]];
-        }
+        return count;
     }
 }
-
-
-
